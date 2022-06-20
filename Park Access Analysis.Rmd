@@ -1,0 +1,315 @@
+---
+title: "Park Access Analysis"
+author: "Cathy Liu"
+date: '2022-06-17'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#### The main goal of the research is to identify the green space availability in U.S. cities; it measures how well cities meet their resident’s need for parks based on four metrics: park access, acreage, investment, and amenities. Data Analytics play an important role in finding out different trends such as cities with lowest/highest  Spending per resident in USD before and after covid-19.
+
+```{r}
+library(tidyverse)
+library(randomForest)
+library(skimr)
+library(ggplot2)
+library(widyr)
+```
+
+### Import dataset and count parks in cities
+#### The dataset contains 27 variables including year, city and other discrete and continuous variables.In the dataset, some of these variables end with “data” while others end with “points”. The variables ending with “data” contain raw data, while variables ending with “points” are essentially yearly normalized values
+
+```{r}
+parks <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-06-22/parks.csv')
+parks
+parks %>% count(city)
+
+```
+### Data Waggling. Using parse_number() to convert percents and dollars to numbers, convert remaining character data columns to factors,remove duplicate column
+```{r}
+parks_df <- parks %>% 
+  mutate(park_pct_city_data = parse_number(park_pct_city_data),
+         pct_near_park_data = parse_number(pct_near_park_data),
+         spend_per_resident_data = parse_number(spend_per_resident_data)) %>% 
+  mutate(across(where(is.character), factor)) %>% 
+  select(-city_dup)
+parks_df
+```
+### Display the summary of cities that have less than 20 in total points
+```{r}
+summ <- parks_df %>% 
+filter(total_points < 20)%>%
+select(year,city,total_points)
+summ
+summary(summ)
+```
+
+###	Use `case_when()` to create a new variable `GREEN CITY` which has more than 20% in parkland percentage
+
+```{r}
+green <- parks_df %>%
+  mutate(Green_City = case_when(med_park_size_points > 20 ~ med_park_size_points))
+green
+green_num<-green %>%
+  group_by(year) %>%
+  filter(!is.na(Green_City)) %>%
+  count(Green_City)
+count(green_num)
+green %>%
+  filter(year=="2019") %>%
+ggplot(
+  aes(x=Green_City)
+)+
+  geom_histogram(binwidth=1)+
+  labs(title="Total Green City 2019 (park size>20)")
+green %>%
+  filter(year=="2020") %>%
+ggplot(
+  aes(x=Green_City)
+)+
+  geom_histogram(binwidth=1)+
+  labs(title="Total Green City 2020 (park size>20)")
+```
+#### There’s no “Green city” from 2012 to 2018, 12 green cities in 2019, and 23 cities in 2020.
+
+###	Create a group of cities with highest Spending per resident in USD before and after covid-19
+
+```{r}
+max_before_covid <- parks_df%>%
+filter(year < 2019)%>%
+group_by(city) %>%
+  summarise(highest_Spending_beforeCovid = max(spend_per_resident_data)) 
+max_before_covid
+ave_before<-mean(max_before_covid$highest_Spending_beforeCovid)
+median_before<-median(max_before_covid$highest_Spending_beforeCovid)
+max_after_covid <- parks_df%>%
+filter(year >= 2019)%>%
+group_by(city) %>%
+  summarise(highest_Spending_afterCovid = max(spend_per_resident_data))
+max_after_covid
+ave_after<-mean(max_after_covid$highest_Spending_afterCovid)
+median_after<-median(max_after_covid$highest_Spending_afterCovid)
+parks_df %>% select(year,city,spend_per_resident_data) %>% 
+  filter(city=="Washington, DC" |
+         city=="Washington, D.C."
+         )
+CovB<- max_before_covid %>%
+top_n(10, highest_Spending_beforeCovid)
+CovB
+CovA<- max_after_covid %>%
+top_n(10, highest_Spending_afterCovid)
+CovA
+(ggplot(CovB)+
+  geom_bar(aes(x=city, y=highest_Spending_beforeCovid),
+            stat = "identity")+
+  labs(title='Highest Spending per resident in USD before Covid'))
+(ggplot(CovA)+
+  geom_bar(aes(x=city, y=highest_Spending_afterCovid,fill=city),
+            stat = "summary")+
+  labs(title='Highest Spending per resident in USD after Covid'))
+```
+#### Washington D.C had the highest spending per resident before COVID -19, but after COVID-19, their spending became low.San Francisco had the highest  Spending of $399 per resident after COVID-19 as the COVID-19 had a significant impact on San Francisco's budget intensely.
+
+### Create a group of cities with lowest Spending per resident in USD before and after covid-19.
+
+```{r}
+min_before_covid <- parks_df%>%
+filter(year < 2019)%>%
+group_by(city) %>%
+  summarise(Lowest_Spending_beforeCovid = min(spend_per_resident_data))
+min_before_covid
+ave_min_before<-mean(min_before_covid $Lowest_Spending_beforeCovid)
+median_min_before<-median(min_before_covid $Lowest_Spending_beforeCovid)
+min_after_covid <- parks_df%>%
+filter(year >= 2019)%>%
+group_by(city) %>%
+  summarise(Lowest_Spending_afterCovid = min(spend_per_resident_data))
+min_after_covid
+ave_min_after<-mean(min_after_covid$Lowest_Spending_afterCovid)
+median_min_after<-median(min_after_covid$Lowest_Spending_afterCovid)
+CovvB<- min_before_covid %>%
+top_n(10, Lowest_Spending_beforeCovid)
+CovvB
+CovvB %>% summarise(
+    average_CovvB=mean(Lowest_Spending_beforeCovid, na.rm=TRUE)
+)
+CovvA<- min_after_covid %>%
+top_n(10, Lowest_Spending_afterCovid)
+CovvA
+CovvA %>% summarise(
+    average_Covva=mean(Lowest_Spending_afterCovid, na.rm=TRUE)
+)
+(ggplot(CovvB)+
+  geom_bar(aes(x=city, y=Lowest_Spending_beforeCovid,fill=city),
+            stat = "identity")+
+  labs(title='Lowest Spending per resident in USD before Covid'))
+(ggplot(CovvA)+
+  geom_bar(aes(x=city, y=Lowest_Spending_afterCovid,fill=city),
+            stat = "summary")+
+  labs(title='Lowest Spending per resident in USD after Covid'))
+parks_df %>% select(year,city,spend_per_resident_data) %>% 
+  filter(city=="Plano" 
+         )
+```
+#### The average max per resident investment before COVID-19 is $116.6075, and the median is $99. While the average per resident investment after COVID-19 is $117.46, and the median is $94. 
+
+###	Display the top ten rank park using kable function?
+```{r}
+news<- parks_df %>% 
+arrange(desc(rank))
+data <- news[1:10,]
+print(knitr::kable(data, "pipe"))
+  
+ggplot(data)+
+  geom_point(aes(x=city, y=rank,
+                 color=city,
+                 size=city), alpha=.6)+
+  labs(title="Top ten rank park")
+```
+### Select cities which 75% of residents can walk to the park in ten minutes
+```{r}
+parks_dat = parks_df %>%
+filter(pct_near_park_data > 75)%>%
+select(year,city,pct_near_park_data) 
+parks_dat
+parks_dat %>% group_by(city) %>% count(,sort = TRUE)
+parks_dat %>% 
+ ggplot()+ #visualization
+  coord_flip()+   # this makes the plot horizontal
+  geom_bar( 
+    aes(x=city,y=pct_near_park_data,fill=city),stat = "summary")
+```
+#### New York had the lowest spending per resident before COVID -19. From 2012 to 2019, investment grew to roughly $10 per resident per year. But after COVID-19, in 2020, they increased by more than $40 per resident per year, spending much higher than before. St. Louis continuously increased their investment in green space from 2012 to 2020
+
+#### By analyzing the data we collected, we found that in 2020, when Covid-19 broke out, the government's investment in parks increased slightly compared with the past, but the increase was insignificant. Some cities' investments even declined might be affected by the economic downturn during the pandemic. While some cities, such as Arlington, Virginia, Minneapolis, Plano, Seattle, etc., increased their investment dramatically.
+
+### Top ten Cities with highest total point
+```{r}
+parks_top10<-parks_df %>%
+  arrange(desc(total_points),sort=TRUE) %>% 
+  head(10)
+parks_top10 %>% 
+  ggplot(
+  aes(total_points,city,colour=city,size=med_park_size_points,labs(title="Top ten rank park"))
+  )+
+  geom_count()+
+  ggtitle("Top ten parks")
+```
+#### For these top 10 cities, their total points are all more than 300.
+
+### Use lm() function to build model that predict total point based on data in data set. Using Parkland as % of city area points, Percent of residents within a 10 minute walk to park points,Spending per resident in points and	Playgrounds per 10,000 residents points as variables and compare the results.
+```{r}
+park_lm<-parks_df %>% 
+  filter(!is.na(total_points))
+lm_parks<-lm(total_points~park_pct_city_points, data=parks)
+summary(lm_parks)
+lm_parks1<-lm(total_points~pct_near_park_points, data=parks)
+summary(lm_parks1)
+lm_parks2<-lm(total_points~spend_per_resident_points, data=parks)
+summary(lm_parks2)
+lm_parks3<-lm(total_points~playground_points, data=parks)
+summary(lm_parks3)
+```
+#### The most important factor is spending per resident in USD which means the more residents spend on the park, the higher are the total points. Other factors include park access, which means the percent of residents within a 10-minute walk to the park, playgrounds per 10,000 residents, parkland as a percentage of the city area, amenities, and so on.
+
+### Comparing the top5 cities and the lowest five cities with total point in different ways.
+```{r}
+parks_df %>% 
+  filter(city=="Minneapolis" |
+           city=="Washington, D.C." |
+           city=="St. Paul"|
+           city=="Arlington, Virginia"|
+           city=="Cincinnati") %>% ggplot(
+  aes(year,spend_per_resident_data,colour=city,fill=city)
+  )+
+  geom_line()+
+  ggtitle("Top five Spending per resident in USD")
+parks_lowest10<-parks_df %>%
+  arrange(total_points,sort=TRUE) %>% 
+  head(10)
+parks_lowest10 %>% 
+  ggplot(
+  aes(total_points,city,colour=city,size=med_park_size_points)
+  )+
+  geom_count()+
+  ggtitle("10 parks with lowest rank")
+parks_df %>% 
+  filter(city=="Fresno" |
+           city=="Mesa" |
+           city=="Santa Ana"|
+           city=="Wichita"|
+           city=="Newark") %>% ggplot(
+  aes(year,total_points,colour=city,fill=city)
+  )+
+  geom_line()
+parks_df %>% 
+  filter(city=="Fresno" |
+           city=="Mesa" |
+           city=="Santa Ana"|
+           city=="Wichita"|
+           city=="Newark") %>% ggplot(
+  aes(year,spend_per_resident_data,colour=city,fill=city)
+  )+
+  geom_line()+
+   ggtitle("Lowest five Spending per resident in USD")
+  
+```
+#### Comparing the cities with the highest and lowest total point, the top cities have more parkland areas, are more convenient to access, and has more investment, especially after 2018.
+
+### Camparision of parkland as percentage of city area and spending per resident in USD
+```{r}
+parks_df %>% 
+  filter(city=="Fresno" |
+           city=="Mesa" |
+           city=="Santa Ana"|
+           city=="Wichita"|
+           city=="Newark" |
+           city=="Minneapolis" |
+           city=="Washington, D.C." |
+           city=="St. Paul"|
+           city=="Arlington, Virginia"|
+           city=="Cincinnati"
+           ) %>% ggplot(
+ aes(city,park_pct_city_data,colour=city,size=city)
+  )+
+  geom_count()+
+  ggtitle("Comparison parkland as percentage of city area")
+parks_df %>% 
+  filter(city=="Fresno" |
+           city=="Mesa" |
+           city=="Santa Ana"|
+           city=="Wichita"|
+           city=="Newark" |
+           city=="Minneapolis" |
+           city=="Washington, D.C." |
+           city=="St. Paul"|
+           city=="Arlington, Virginia"|
+           city=="Cincinnati"
+           ) %>% ggplot(
+ aes(city,pct_near_park_data,colour=city,size=city)
+  )+
+  geom_count()+
+  ggtitle("Comparision of percent of residents within a 10 minute walk to park")
+parks_df %>% 
+  filter(city=="Fresno" |
+           city=="Mesa" |
+           city=="Santa Ana"|
+           city=="Wichita"|
+           city=="Newark" |
+           city=="Minneapolis" |
+           city=="Washington, D.C." |
+           city=="St. Paul"|
+           city=="Arlington, Virginia"|
+           city=="Cincinnati" 
+         ) %>% ggplot(
+  aes(year,spend_per_resident_data,colour=city,fill=city)
+  )+
+  geom_line()+
+  ggtitle("Camparision of Spending per resident in USD")
+```
+#### cities with low total point scores have an insufficient investment in the early stage of parks and didn’t increase their investment significantly in recent years. The top green cities have good park access, more acreage, investment, and amenities. On the other hand, they increased investment significantly in green space or maintained a relatively high investment, resulting in a widening gap between the cities, highlighting the urgent need to centre equity in park investment and planning.
+
+#### through analysis of the data, we found that in 2020, when Covid-19 broke out, the government's investment in parks increased slightly compared with the past, but the increase was insignificant. Further observations are required to develop a conclusion.
+
