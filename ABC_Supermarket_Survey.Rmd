@@ -1,0 +1,283 @@
+---
+title: "ABC Supermarkets Survey"
+author: "https://github.com/VictoriaUniversity-AU/assessment-1-Cathy-2022.git"
+date: '2022-08-08'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(widyr)
+#install.packages("lubridate")
+library(lubridate)
+library(tidytext)
+library(tidymodels)
+
+```
+### Use parse_number() to covert purchase.price, total.cost,sold.price and total.sales to number, remove $ signs
+```{r}
+ABC_Supermarket <- read.csv("Survey data.csv")
+ABC_Supermarket %>% 
+  group_by(suplier) %>% 
+  ungroup()
+  
+ABC_df <- ABC_Supermarket %>% 
+  mutate(purchase_price_num = parse_number(purchase.price),
+         total_cost_number = parse_number(total.cost),
+         sold_price_num = parse_number(sold.price),
+         total_sales_num = parse_number(total.sales)
+         ) 
+
+```
+### 1.What are the top 5 company items that have more demand based on items sold
+
+```{r}
+top_items <- ABC_Supermarket %>% 
+  group_by(suplier,Itemname) %>% 
+  summarise(
+    number=n(),
+    item_sum = sum(Item.sold, na.rm = TRUE)
+  ) %>% 
+  ungroup()
+
+top_items <- top_items %>% 
+  arrange(-item_sum) %>%
+  head(5) %>% 
+  select(Itemname,suplier, item_sum)
+top_items
+
+top_items %>% 
+  ggplot(
+  aes(fct_reorder(Itemname, item_sum), item_sum, fill = suplier)) +
+  geom_col(alpha = 0.8) 
+
+```
+### What are the top 5 company sales that have more demand based on items sold
+```{r}
+top_sales <- ABC_df %>% 
+  group_by(suplier,Itemname) %>% 
+  summarise(
+    number=n(),
+    total_sales_sum = sum(total_sales_num, na.rm = TRUE),
+    total_cost_sum = sum(total_cost_number, na.rm = TRUE)
+  ) %>% 
+  ungroup()
+
+top_sales <- top_sales %>% 
+  arrange(-total_sales_sum) %>%
+  head(5) %>% 
+  select(Itemname,suplier, total_sales_sum)
+top_sales
+
+top_sales %>% 
+  ggplot(
+  aes(fct_reorder(Itemname, total_sales_sum), total_sales_sum, fill = suplier)) +
+  geom_col(alpha = 0.8) 
+```
+### 2.Finding out the top 5 profitable items and giving these items sales line chart to find it sale’s trend.
+```{r}
+ABC_df <- ABC_df %>%
+  mutate(profit = total_sales_num - total_cost_number,
+         year_month= Year*100 +Month.Number)
+
+profit <- ABC_df %>% 
+  group_by(Itemname) %>% 
+  summarise(item_profit= sum(profit),
+            item_sold= sum(Item.sold),
+            ) %>% 
+  ungroup()
+
+profit %>% arrange(-item_profit) %>%
+  head(5) 
+
+
+top_profit <- ABC_df %>% group_by(Itemname,year_month) %>% 
+  summarise(total_profit= sum(profit),
+            total_sales = sum(total_sales_num)) %>% 
+  filter( Itemname=="Squash" |
+           Itemname == "Bananas" |
+           Itemname == "Oranges" | 
+           Itemname == "Lettuce" |
+           Itemname == "Tomatoes" 
+         )
+
+top_profit %>% ggplot(
+  aes(year_month,total_sales,colour=Itemname,fill=Itemname)
+  )+
+  geom_line()+
+  facet_wrap(~ Itemname, scales = "free") +
+  ggtitle("Top 5 Items Profitable Items")
+
+```
+### 3.	Finding out 5 lowest profitable items, giving the 5 lowest items sales line chart to find it sale’s trend.
+```{r}
+profit %>% arrange(item_profit) %>%
+  head(5) 
+
+low_profit <- ABC_df %>% group_by(Itemname,year_month) %>% 
+  summarise(total_profit= sum(profit),
+            total_sales = sum(total_sales_num)) %>% 
+  filter( Itemname=="Celery" |
+           Itemname == "Mushrooms" |
+           Itemname == "Cheese" | 
+           Itemname == "Sour cream" |
+           Itemname == "Cucumber" 
+         )
+
+low_profit %>% ggplot(
+  aes(year_month,total_sales,colour=Itemname,fill=Itemname)
+  )+
+  geom_line()+
+  facet_wrap(~ Itemname, scales = "free") +
+  ggtitle("Lowest 5 Profitable Items")
+```
+### 4.Finding the total sales per month for each year, finding which month has the highest sales comparing to other months. 
+```{r}
+
+sale_pm <- ABC_df %>% 
+  group_by(year_month) %>% 
+  summarise(sales_per_month = sum(total_sales_num)
+    ) %>% 
+  arrange(year_month)
+
+sale_pm %>% 
+  ggplot(
+  aes(year_month,sales_per_month,fill=sales_per_month)
+  )+
+  geom_line()+
+  ggtitle("Total Sales per Month")
+
+```
+### Comparing total sales for each year.
+
+```{r}
+sales_year <- ABC_df %>% 
+  group_by(Year) %>% 
+  summarise(sales_per_year = sum(total_sales_num)
+  ) 
+sales_year %>%  ggplot(
+  aes(x = Year, y = sales_per_year, fill = sales_per_year)  
+  )+
+  geom_col() +
+  labs(y = "Total Sales")
+  ggtitle("Total Sales per Year")
+growth_rate <- sales_year %>% mutate(
+         Diff_year = Year - lag(Year), 
+         Diff_growth = sales_per_year - lag(sales_per_year), 
+         Rate_percent = (Diff_growth / Diff_year)/sales_per_year * 100)
+  
+```
+### 5.Using lm() function to find is there any relationship between feedback and total sales. Finding out the 5 items which have lowest total sales and finding out their sentiment.
+```{r}
+ABC_lm <- ABC_df %>% 
+  filter(!is.na(total_sales_num))
+
+lm_abc = lm(total_sales_num ~other.feedback, data=ABC_lm)
+summary(lm_abc)
+
+ABC_df %>% 
+  group_by(Itemname,suplier) %>% 
+  summarise(total_sales= sum(total_sales_num),
+            item_sold= sum(Item.sold),
+            ) %>% 
+  ungroup() %>% arrange(total_sales) %>%
+  head(5)
+ 
+ low_total_sales <- ABC_df %>% 
+   filter(grepl("Glendal Foods", suplier, ignore.case = TRUE) & Itemname =="Celery" |
+          grepl("Mediterranean Wholesalers", suplier, ignore.case = TRUE) & Itemname =="Yogurt" |
+          grepl("Bruno Fine Foods", suplier, ignore.case = TRUE) & Itemname =="Lettuce" |
+          grepl("Glendal Foods", suplier, ignore.case = TRUE) & Itemname =="Yogurt" |
+          grepl("Quality Foods", suplier, ignore.case = TRUE) & Itemname =="Cucumber"
+          ) %>% 
+   select(Itemname,suplier,total.sales,other.feedback)
+ 
+feedback_token <- low_total_sales %>% 
+  unnest_tokens(word,other.feedback)
+
+nrc<- get_sentiments("nrc")
+feedback_token <-feedback_token %>%
+  inner_join(nrc) %>% 
+  rename(sentiment_nrc=sentiment) %>% 
+  select(Itemname,suplier,sentiment_nrc)
+```
+### 6.Which suppliers has the highest total sales?  Did they have positive feedback? 
+```{r}
+sales_suplier <- ABC_df %>% filter(!is.na(total.sales)) %>% 
+  group_by(suplier) %>% 
+  summarise(total_sale=sum(total_sales_num)) %>% 
+  arrange(-total_sale) 
+
+sales_suplier %>% ggplot(
+  aes(fct_reorder(suplier, total_sale),total_sale, fill = suplier)) +
+  geom_col(alpha = 0.8) 
+
+best_suplier <- ABC_df %>% 
+  filter(grepl("Basfoods Direct", suplier, ignore.case = TRUE) &
+        !str_detect(suplier, "Basfoods Direct - Somerton Store"))
+best_suplier %>% distinct(Itemname)
+
+best_token <- best_suplier %>% 
+  unnest_tokens(word,other.feedback)
+
+bing<- get_sentiments("bing")
+best_token <-best_token %>%
+  inner_join(bing) %>% 
+  rename(sentiment_bing=sentiment) %>% 
+  select(suplier, sentiment_bing)
+
+best_token <- best_token%>%
+  count(sentiment_bing, sort=TRUE)%>% 
+  mutate(percent=paste0(round(n/sum(n)*100,2),"%"))
+counts<-best_token %>% count(sentiment_bing, sort = TRUE) 
+ggplot(best_token, aes(x = "", y = percent, fill = sentiment_bing)) +
+  geom_col() +
+  geom_text(aes(label = percent),
+            position = position_stack(vjust = 0.5)) +
+  coord_polar(theta = "y")+
+  ggtitle("Sentiment bing for best supplier")
+```
+### Which suppliers has the lowest total sales?  Did they have negative feedback?
+```{r}
+ABC_df %>% 
+  filter(grepl("Delta Sales", suplier, ignore.case = TRUE)) %>% 
+  select(Itemname,suplier,total.sales,Item.sold,other.feedback)
+```
+### 7.Which supplier provided items which has the highest profit based on year.
+```{r}
+hiprofit_supplier <- ABC_df %>% 
+  group_by(suplier,Year) %>% 
+  summarise(total_profit=sum(profit)) %>% 
+  arrange(total_profit)
+hiprofit_supplier %>% ggplot(
+  aes(total_profit, fct_reorder(suplier, total_profit), fill = Year)) +
+  geom_col(alpha = 0.8) 
+
+```
+###8.Which item's profit increased highly in these years? Find out the top 5. Which item's profit decreased in these years.
+```{r}
+hiprofit_item <- ABC_df %>% 
+  group_by(Itemname,Year) %>% 
+  summarise(total_profit=sum(profit)) %>% 
+  arrange(total_profit)
+
+growth_profit <-hiprofit_item %>% 
+  group_by(Itemname) %>% 
+  mutate(
+         Diff_growth = total_profit - lag(total_profit), 
+         Rate_profit = (Diff_growth / lag(total_profit) /100)
+  )%>% 
+  arrange(-Rate_profit)  
+  
+growth_profit %>% ggplot(
+  aes(Rate_profit, fct_reorder(Itemname, Rate_profit), fill = Itemname)) +
+  geom_col(alpha = 0.8) 
+
+
+```
+
+
+
