@@ -1,0 +1,109 @@
+---
+title: "Business Analysis"
+author: "https://github.com/VictoriaUniversity-AU/assessment-1-Cathy-2022.git"
+date: '2022-08-26'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(widyr)
+library(readxl)
+```
+### Import data
+```{r}
+df <- read_excel("Data file.xlsx")
+str(df)
+```
+
+### 1.Identify items sold in the year 2017 Discuss what you have learned from the data outcome 
+```{r}
+df <- df %>% mutate(
+  year = as.numeric(substr(`Order Date`, 1,4)),
+  month = as.numeric(substr(`Order Date`, 6,7)),
+  date = as.numeric(substr(`Order Date`,9,10))
+)
+
+df %>% count(year, sort = TRUE)
+
+df_2017 <- df %>% filter(year==2017) %>% 
+  count(typeCategory) %>% 
+  arrange(-n) 
+
+p <- df_2017 %>% filter(n>10) %>% 
+  ggplot( 
+  mapping = aes(
+  x = typeCategory, fill = typeCategory, y = n))
+p + geom_col()+labs(title="Type Category sold in 2017")
+```
+### 2. Does product price varies city to city? Identify data, analyze and discuss result.
+```{r}
+df %>% count(typeCategory, sort = TRUE) 
+df %>% count(`Order City`)
+
+df_popular <- df %>% group_by(typeCategory) %>% 
+  filter(n()>40)
+
+price_compare <- df_popular %>% group_by(`Order City`,typeCategory) %>% 
+  summarise(
+    count=n(),
+    mean_price=mean(`Product Price`,na.rm=TRUE),
+    median_price=median(`Product Price`,na.rm=TRUE),
+    max_price=max(`Product Price`,na.rm=TRUE),
+    min_price=min(`Product Price`,na.rm=TRUE)
+  ) %>% arrange(typeCategory)
+
+price_compare %>% filter(
+  grepl("beleza_saude", typeCategory, ignore.case = TRUE)
+  ) %>% 
+  ggplot(
+  aes(mean_price, fct_reorder(`Order City`, mean_price), fill = `Order City`)) +
+  geom_col(alpha = 0.8) 
+
+price_compare %>% filter(
+  grepl("cama_mesa_banho", typeCategory, ignore.case = TRUE)
+  ) %>% 
+  ggplot(
+  aes(median_price, fct_reorder(`Order City`, median_price), fill = `Order City`)) +
+  geom_col(alpha = 0.8) 
+```
+### 3. Does type-Category vary city to city? Identify data, analyze and discuss results
+```{r}
+df %>% count(typeCategory)
+df_city_type <- df %>% count(`Order City`, typeCategory)
+df_city_type %>% count(`Order City`) %>% 
+  arrange(-n)
+```
+### 4. Identify order where the customer use “credit_card” payment method? Identify data, analyze and discuss result 
+```{r}
+df_pay_credit <- df %>% count(`Order City`, `Payment Method`) %>% 
+  filter(`Payment Method`=="credit_card") %>% 
+  arrange(-n) %>% 
+  rename(credit_n=n)
+
+df_pay <- df %>% count(`Order City`)
+df_pay <- df_pay %>%    
+  left_join(df_pay_credit) %>% 
+   mutate(percent=round(credit_n/n,2)) %>% 
+         arrange(-percent) 
+df_pay %>% ggplot(
+  aes(percent, fct_reorder(`Order City`, percent), fill = `Order City`)) +
+  geom_col(alpha = 0.8) 
+```
+### 5. identify items’ product prices between 45 and 552. 
+```{r}
+df_5 <- df %>% filter(`Product Price`>45 & `Product Price`<552)
+
+df_5 %>% count(`Order City`)%>% 
+  arrange(-n)
+df_5 <- df_5 %>% count(`Order City`,year) 
+
+df_5 %>% ggplot(
+  aes(x=n, y=`Order City`,color=year, fill=year), alpha=.6)+
+  geom_col()+
+  labs(title="Item sold for each city")
+```
+
